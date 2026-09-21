@@ -1,4 +1,4 @@
-package net.prorrogam.idhm.currency;
+package net.prorrogam.idhm.api;
 
 import java.math.BigDecimal;
 

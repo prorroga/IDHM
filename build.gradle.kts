@@ -7,10 +7,12 @@ plugins {
 repositories {
     mavenCentral()
     maven("https://repo.papermc.io/repository/maven-public/")
+    maven("https://repo.catnies.top/releases")
 }
 
 dependencies {
     compileOnly("io.papermc.paper:paper-api:26.2.build.+")
+    implementation("net.momirealms:sparrow-yaml:1.0.6")
 }
 
 java {
@@ -26,6 +28,7 @@ tasks {
         archiveBaseName.set("IDHM")
         archiveClassifier.set("")
         archiveVersion.set("")
+        relocate("net.momirealms.sparrow.yaml", "net.prorrogam.idhm.libs.sparrow.yaml")
     }
 
     runServer {
