@@ -116,15 +116,15 @@ public final class CurrencyLoader {
             return null;
         }
 
-        //max balance (null = unlimited)
         BigDecimal maxBalance = getBigDecimal(entry, "max", null);
         if (maxBalance != null) {
-            if (maxBalance.signum() <= 0) {
-                warnings.add("Currency '" + id + "': 'max' must be positive when set ("
-                        + maxBalance + "). Skipped.");
+            if (maxBalance.compareTo(BigDecimal.valueOf(-1)) == 0) {
+                maxBalance = null;
+            } else if (maxBalance.signum() <= 0) {
+                warnings.add("Currency '" + id + "': 'max' must be positive or -1 "
+                        + "(no limit) when set (" + maxBalance + "). Skipped.");
                 return null;
-            }
-            if (defaultBalance.compareTo(maxBalance) > 0) {
+            } else if (defaultBalance.compareTo(maxBalance) > 0) {
                 warnings.add("Currency '" + id + "': 'default' (" + defaultBalance
                         + ") exceeds 'max' (" + maxBalance + "). Skipped.");
                 return null;
@@ -185,7 +185,7 @@ public final class CurrencyLoader {
 
         List<String> result = new ArrayList<>();
         for (int i = 0; i < seq.size(); i++) {
-            String cmd = seq.get(String.class, Route.from(i));
+            String cmd = seq.get(String.class, i);
             if (cmd == null) continue;
             String normalized = cmd.trim().toLowerCase(Locale.ROOT);
             if (normalized.isEmpty()) continue;
@@ -311,22 +311,22 @@ public final class CurrencyLoader {
     }
 
     private static String getString(SectionNode entry, String key) {
-        return entry.get(String.class, Route.from(key));
+        return entry.get(String.class, key);
     }
 
     private static boolean getBoolean(SectionNode entry, String key, boolean fallback) {
-        Boolean value = entry.getOrDefault(Boolean.class, fallback, Route.from(key));
+        Boolean value = entry.getOrDefault(Boolean.class, fallback, key);
         return value != null ? value : fallback;
     }
 
     private static int getInt(SectionNode entry, String key, int fallback) {
-        Integer value = entry.getOrDefault(Integer.class, fallback, Route.from(key));
+        Integer value = entry.getOrDefault(Integer.class, fallback, key);
         return value != null ? value : fallback;
     }
 
     private static BigDecimal getBigDecimal(SectionNode entry, String key,
                                             BigDecimal fallback) {
-        String raw = entry.get(String.class, Route.from(key));
+        String raw = entry.get(String.class, key);
         if (raw == null || raw.isBlank()) {
             return fallback;
         }

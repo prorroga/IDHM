@@ -32,7 +32,7 @@ storage:
 
 
 settings:
-  default-currency: "coins"
+  default-currency: "rubies"
   # How often (in seconds) dirty balances are flushed to the database.
   # Lower = less data loss on crash, more DB load. 300 = 5 minutes.
   save-interval-seconds: 300

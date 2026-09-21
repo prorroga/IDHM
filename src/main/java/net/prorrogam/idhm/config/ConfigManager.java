@@ -64,11 +64,11 @@ public final class ConfigManager {
     }
 
     public String configVersion() {
-        return safeGetString(Route.from("___version___"));
+        return safeGetString("config-version");
     }
 
     public String defaultCurrencyId() {
-        return safeGetString(Route.from("settings", "default-currency"));
+        return safeGetString("settings", "default-currency");
     }
 
     public SequenceNode currenciesNode() {
@@ -79,13 +79,9 @@ public final class ConfigManager {
         return document.getSectionOrNull(Route.from("language"));
     }
 
-    /**
-     * Reads a string at the given route, returning null if the path is
-     * missing or the value is not a scalar string.
-     */
-    private String safeGetString(Route route) {
+    private String safeGetString(String... keys) {
         try {
-            return document.get(String.class, route);
+            return document.get(String.class, (Object[]) keys);
         } catch (Exception e) {
             return null;
         }

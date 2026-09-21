@@ -26,7 +26,7 @@ tasks.withType<JavaCompile>().configureEach {
     options.release.set(21)
 }
 
-val pluginVersion = providers.gradleProperty("plugin_version").getOrElse("dev")
+val pluginVersion = providers.gradleProperty("version").getOrElse("dev")
 val configVersion = providers.gradleProperty("config_version").getOrElse("1")
 val projectDescription = project.description ?: ""
 
