@@ -1,0 +1,11 @@
+name: IDHM
+description: ${description}
+prefix: IDHM
+version: '${version}'
+
+main: net.prorrogam.idhm.IDHM
+api-version: '26.2'
+folia-supported: true
+load: POSTWORLD
+
+authors: [ prorroga ]
