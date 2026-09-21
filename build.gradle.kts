@@ -1,3 +1,5 @@
+import org.apache.tools.ant.filters.ReplaceTokens
+
 plugins {
     id("java-library")
     id("com.gradleup.shadow") version "9.6.1"
@@ -11,13 +13,22 @@ repositories {
 }
 
 dependencies {
-    compileOnly("io.papermc.paper:paper-api:26.2.build.+")
+    compileOnly("io.papermc.paper:paper-api:1.21.8-R0.1-SNAPSHOT")
     implementation("net.momirealms:sparrow-yaml:1.0.6")
 }
 
 java {
-    toolchain.languageVersion = JavaLanguageVersion.of(25)
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
 }
+
+tasks.withType<JavaCompile>().configureEach {
+    options.encoding = "UTF-8"
+    options.release.set(21)
+}
+
+val pluginVersion = providers.gradleProperty("plugin_version").getOrElse("dev")
+val configVersion = providers.gradleProperty("config_version").getOrElse("1")
+val projectDescription = project.description ?: ""
 
 tasks {
     build {
@@ -28,19 +39,36 @@ tasks {
         archiveBaseName.set("IDHM")
         archiveClassifier.set("")
         archiveVersion.set("")
-        relocate("net.momirealms.sparrow.yaml", "net.prorrogam.idhm.libs.sparrow.yaml")
+        relocate("net.momirealms.sparrow", "net.prorrogam.idhm.libraries.sparrow")
     }
 
     runServer {
-        minecraftVersion("26.2")
-        jvmArgs("-Xms2G", "-Xmx2G")
-        workingDirectory.set(layout.projectDirectory.dir("run"))
+        minecraftVersion("1.21.8")
     }
 
     processResources {
-        val props = mapOf("version" to version, "description" to project.description)
+        filteringCharset = "UTF-8"
+
+        inputs.property("plugin_version", pluginVersion)
+        inputs.property("config_version", configVersion)
+        inputs.property("description", projectDescription)
+
         filesMatching("plugin.yml") {
-            expand(props)
+            filter<ReplaceTokens>("tokens" to mapOf(
+                "version" to pluginVersion,
+                "description" to projectDescription
+            ))
+        }
+        filesMatching("config.yml") {
+            filter<ReplaceTokens>("tokens" to mapOf(
+                "config_version" to configVersion
+            ))
+        }
+        filesMatching("idhm.properties") {
+            filter<ReplaceTokens>("tokens" to mapOf(
+                "plugin_version" to pluginVersion,
+                "config_version" to configVersion
+            ))
         }
     }
 }

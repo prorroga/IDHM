@@ -3,7 +3,7 @@ package net.prorrogam.idhm.config;
 import java.util.List;
 
 /**
- * Version check for config.yml. For now it only warns the real migration is
+ * Version check for config.yml. For now it only warns — real migration is
  * a future phase. Never fails: this always returns {@code ok(...)}.
  * <p>
  * The value inside the result is the version the caller should carry forward:
@@ -23,11 +23,10 @@ public final class ConfigVersion {
 
     /**
      * Checks the config version against the expected one.
-     *
      * @param foundVersion    version read from config.yml; may be null or blank
      * @param expectedVersion version the plugin currently expects; must be non-null
      * @return always a successful result; the value is the version to carry
-     *         forward (the sentinel if none was found, otherwise {@code foundVersion})
+     * forward (the sentinel if none was found, otherwise {@code foundVersion})
      */
     public static LoadResult<String> check(String foundVersion, String expectedVersion) {
         if (foundVersion == null || foundVersion.isBlank()) {

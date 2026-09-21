@@ -28,6 +28,21 @@ public record Currency(
     }
 
     public String getPrimaryCommand() {
-        return commands.isEmpty() ? id : commands.get(0);
+        return commands.isEmpty() ? id : commands.getFirst();
+    }
+
+    /**
+     * Returns a copy of this currency with a different command list.
+     * <p>
+     * Keeps the 16-field record immutable while avoiding manual
+     * reconstruction at every call site. If a new field is added to
+     * the record, only this method needs updating.
+     */
+    public Currency withCommands(List<String> newCommands) {
+        return new Currency(
+                id, name, symbol, defaultBalance, maxBalance,
+                payable, decimal, maxDecimals, vault, local, balanceShorthand,
+                format, formatShort, decimalFormat, decimalFormatShort,
+                List.copyOf(newCommands));
     }
 }

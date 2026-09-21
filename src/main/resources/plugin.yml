@@ -1,7 +1,7 @@
 name: IDHM
-description: ${description}
+description: '@description@'
 prefix: IDHM
-version: '${version}'
+version: '@version@'
 
 main: net.prorrogam.idhm.IDHM
 api-version: '26.2'

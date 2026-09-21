@@ -1,0 +1,66 @@
+# Do not edit manually: a wrong value can trigger or skip migrations.
+config-version: '@config_version@'
+
+# Anonymous usage statistics (bStats). No player data is sent.
+metrics: true
+
+# Checks for new IDHM releases on startup and notifies admins with
+# permission idhm.admin.update. No automatic download.
+update-checker: true
+
+
+language:
+  # Locale used when the player has no locale-specific file.
+  default-locale: 'en'
+
+  # If set, all players see this locale regardless of their client.
+  # Leave empty to respect each player's locale.
+  forced-locale: ''
+
+  # If a translation key is missing, fall back to the default locale's
+  # value instead of printing the raw key.
+  fallback-to-prefix: true
+
+
+storage:
+  type: h2
+  url: 'jdbc:h2:./plugins/IDHM/data.db'
+  username: 'sa'
+  password: ''
+  pool-size: 4
+  table-prefix: 'idhm_'
+
+
+settings:
+  default-currency: "coins"
+  # How often (in seconds) dirty balances are flushed to the database.
+  # Lower = less data loss on crash, more DB load. 300 = 5 minutes.
+  save-interval-seconds: 300
+  # Enables verbose logging. Useful for debugging, noisy in production.
+  debug: false
+
+leaderboard:
+  enabled: true
+  cache-lifetime: 60
+
+shortcuts: ["", "k", "M", "B", "T", "P", "E"]
+
+currencies:
+  - id: "rubies"
+    name: "&cRubies"
+    symbol: "&c$"
+    default: 100.0
+    max: -1
+    payable: true
+    decimal: true
+    max-decimals: 2
+    vault: true
+    local: false
+    balance-shorthand: true
+    format: "&c%amount% %currency%"
+    format-short: "%symbol%%amount%"
+    decimal-format: "#,##0.00"
+    decimal-format-short: "#,##0.00"
+    commands:
+      - "ruby"
+      - "rubies"

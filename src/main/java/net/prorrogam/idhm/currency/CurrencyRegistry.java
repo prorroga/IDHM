@@ -46,18 +46,7 @@ public final class CurrencyRegistry {
                     "Cannot build CurrencyRegistry from empty currency list");
         }
 
-        Map<String, Currency> map = new LinkedHashMap<>();
-        for (Currency currency : currencies) {
-            String id = currency.id();
-            if (id == null || id.isBlank()) {
-                throw new IllegalArgumentException(
-                        "Currency with null or blank id: " + currency);
-            }
-            if (map.putIfAbsent(id, currency) != null) {
-                throw new IllegalArgumentException(
-                        "Duplicate currency id: " + id);
-            }
-        }
+        var map = createMap(currencies);
 
         Currency defaultCurrency;
         if (defaultId != null && !defaultId.isBlank()) {
@@ -71,6 +60,22 @@ public final class CurrencyRegistry {
         }
 
         return new CurrencyRegistry(Collections.unmodifiableMap(map), defaultCurrency);
+    }
+
+    private static Map<String, Currency> createMap(List<Currency> currencies) {
+        Map<String, Currency> map = new LinkedHashMap<>();
+        for (Currency currency : currencies) {
+            String id = currency.id();
+            if (id == null || id.isBlank()) {
+                throw new IllegalArgumentException(
+                        "Currency with null or blank id: " + currency);
+            }
+            if (map.putIfAbsent(id, currency) != null) {
+                throw new IllegalArgumentException(
+                        "Duplicate currency id: " + id);
+            }
+        }
+        return map;
     }
 
     /**
