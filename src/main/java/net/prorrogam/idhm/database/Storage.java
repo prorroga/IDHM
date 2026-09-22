@@ -4,6 +4,7 @@ import net.prorrogam.idhm.api.BalanceEntry;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -25,6 +26,8 @@ public interface Storage extends AutoCloseable {
     void saveBalances(List<BalanceUpdate> updates) throws Exception;
 
     BigDecimal loadBalance(UUID playerId, String currencyId) throws Exception;
+
+    Map<String, BigDecimal> loadAllBalances(UUID playerId) throws Exception;
 
     List<BalanceEntry> topBalances(String currencyId, int limit) throws Exception;
 

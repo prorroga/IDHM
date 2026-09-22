@@ -12,7 +12,9 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -76,6 +78,27 @@ public final class SqlStorage implements Storage {
     }
 
     @Override
+    public Map<String, BigDecimal> loadAllBalances(UUID playerId) throws SQLException {
+        String sql = "SELECT currency_id, balance FROM " + tableName
+                + " WHERE player_uuid = ?";
+
+        Map<String, BigDecimal> result = new HashMap<>();
+
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, playerId.toString());
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    BigDecimal balance = rs.getBigDecimal("balance");
+                    result.put(rs.getString("currency_id"),
+                            balance != null ? balance : BigDecimal.ZERO);
+                }
+            }
+        }
+        return result;
+    }
+
+    @Override
     public void saveBalances(List<BalanceUpdate> updates) throws SQLException {
         if (updates.isEmpty()) {
             return;
@@ -117,7 +140,8 @@ public final class SqlStorage implements Storage {
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, currencyId);
-            stmt.setMaxRows(limit);
+            stmt.setString(1, currencyId);
+            stmt.setInt(2, limit);
             try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
                     result.add(new BalanceEntry(
