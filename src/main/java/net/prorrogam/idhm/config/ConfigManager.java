@@ -71,6 +71,32 @@ public final class ConfigManager {
         return safeGetString("settings", "default-currency");
     }
 
+    public String storageType() {
+        return safeGetString("storage", "type");
+    }
+
+    public String storageUrl() {
+        return safeGetString("storage", "url");
+    }
+
+    public String storageUsername() {
+        return safeGetString("storage", "username");
+    }
+
+    public String storagePassword() {
+        return safeGetString("storage", "password");
+    }
+
+    public int storagePoolSize() {
+        Integer value = safeGetInt("storage", "pool-size");
+        return value != null ? value : 4;
+    }
+
+    public String storageTablePrefix() {
+        String value = safeGetString("storage", "table-prefix");
+        return value != null ? value : "";
+    }
+
     public SequenceNode currenciesNode() {
         return document.getSequenceOrNull(Route.from("currencies"));
     }
@@ -86,4 +112,13 @@ public final class ConfigManager {
             return null;
         }
     }
+
+    private Integer safeGetInt(String... keys) {
+        try {
+            return document.get(Integer.class, (Object[]) keys);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
 }

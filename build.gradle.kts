@@ -15,6 +15,8 @@ repositories {
 dependencies {
     compileOnly("io.papermc.paper:paper-api:1.21.8-R0.1-SNAPSHOT")
     implementation("net.momirealms:sparrow-yaml:1.0.6")
+    implementation("com.h2database:h2:2.3.232")
+    implementation("com.zaxxer:HikariCP:6.2.1")
 }
 
 java {
@@ -40,6 +42,8 @@ tasks {
         archiveClassifier.set("")
         archiveVersion.set("")
         relocate("net.momirealms.sparrow", "net.prorrogam.idhm.libraries.sparrow")
+        relocate("org.h2", "net.prorrogam.idhm.libraries.h2")
+        relocate("com.zaxxer.hikari", "net.prorrogam.idhm.libraries.hikari")
     }
 
     runServer {

@@ -6,6 +6,9 @@ import net.prorrogam.idhm.config.ConfigVersion;
 import net.prorrogam.idhm.config.LoadResult;
 import net.prorrogam.idhm.currency.CurrencyLoader;
 import net.prorrogam.idhm.currency.CurrencyRegistry;
+import net.prorrogam.idhm.database.SqlStorage;
+import net.prorrogam.idhm.database.StorageManager;
+import net.prorrogam.idhm.database.StorageSettings;
 import net.prorrogam.idhm.util.FoliaDetector;
 import net.prorrogam.idhm.util.SchedulerUtil;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -21,16 +24,18 @@ public final class IDHM extends JavaPlugin {
     private static final String DEFAULT_EXPECTED_CONFIG_VERSION = "1";
 
     private volatile CurrencyRegistry currencyRegistry;
+    private volatile StorageManager storageManager;
 
     @Override
     public void onEnable() {
-
         Properties buildInfo = loadBuildInfo();
         String pluginVersion = buildInfo.getProperty("plugin-version", "unknown");
-        String expectedConfigVersion = buildInfo.getProperty("config-version", DEFAULT_EXPECTED_CONFIG_VERSION);
+        String expectedConfigVersion = buildInfo.getProperty(
+                "config-version", DEFAULT_EXPECTED_CONFIG_VERSION);
 
         String platform = FoliaDetector.IS_FOLIA ? "Folia" : "Paper/Spigot";
-        getLogger().info("IDHM " + pluginVersion + " enabling on " + platform + " (expected config version: " + expectedConfigVersion + ")");
+        getLogger().info("IDHM " + pluginVersion + " enabling on " + platform
+                + " (expected config version: " + expectedConfigVersion + ")");
 
         Path configPath = getDataFolder().toPath().resolve("config.yml");
         LoadResult<ConfigManager> configResult = ConfigManager.load(configPath);
@@ -44,12 +49,14 @@ public final class IDHM extends JavaPlugin {
         ConfigManager config = configResult.valueOrThrow();
 
         String foundConfigVersion = config.configVersion();
-        LoadResult<String> versionResult = ConfigVersion.check(foundConfigVersion, expectedConfigVersion);
+        LoadResult<String> versionResult = ConfigVersion.check(
+                foundConfigVersion, expectedConfigVersion);
         logWarnings(versionResult.warnings());
 
         SequenceNode currenciesNode = config.currenciesNode();
         String defaultCurrencyId = config.defaultCurrencyId();
-        LoadResult<CurrencyRegistry> currencyResult = CurrencyLoader.load(currenciesNode, defaultCurrencyId);
+        LoadResult<CurrencyRegistry> currencyResult = CurrencyLoader.load(
+                currenciesNode, defaultCurrencyId);
 
         if (!currencyResult.success()) {
             logWarnings(currencyResult.warnings());
@@ -58,25 +65,49 @@ public final class IDHM extends JavaPlugin {
             return;
         }
         logWarnings(currencyResult.warnings());
-
         this.currencyRegistry = currencyResult.valueOrThrow();
 
-        SchedulerUtil.runAsync(this, () -> getLogger().info("Async scheduler is ready."));
+        LoadResult<StorageSettings> storageResult = StorageSettings.from(
+                config.storageType(),
+                config.storageUrl(),
+                config.storageUsername(),
+                config.storagePassword(),
+                config.storagePoolSize(),
+                config.storageTablePrefix()
+        );
+        if (!storageResult.success()) {
+            logWarnings(storageResult.warnings());
+            logErrors("Failed to load storage settings", storageResult.errors());
+            getServer().getPluginManager().disablePlugin(this);
+            return;
+        }
+        logWarnings(storageResult.warnings());
 
-        getLogger().info("IDHM enabled with " + currencyRegistry.size() + " currenc" + (currencyRegistry.size() == 1 ? "y" : "ies") + " (default: '" + currencyRegistry.defaultCurrency().id() + "')");
+        try {
+            SqlStorage storage = new SqlStorage(storageResult.valueOrThrow());
+            this.storageManager = new StorageManager(storage, getLogger());
+        } catch (Exception e) {
+            getLogger().severe("Failed to initialize storage: " + e.getMessage());
+            getServer().getPluginManager().disablePlugin(this);
+            return;
+        }
+
+        SchedulerUtil.runAsync(this, () ->
+                getLogger().info("Async scheduler is ready."));
+
+        getLogger().info("IDHM enabled with " + currencyRegistry.size()
+                + " currenc" + (currencyRegistry.size() == 1 ? "y" : "ies")
+                + " (default: '" + currencyRegistry.defaultCurrency().id() + "')");
     }
 
     @Override
     public void onDisable() {
-        // TODO phase 3/4: cancel baltop task, close hikari poool,
-        // flush pending balances.
+        if (storageManager != null) {
+            storageManager.close();
+        }
         getLogger().info("IDHM disabled.");
     }
 
-    /**
-     * @return the loaded currency registry, or {@code null} if the plugin
-     * failed to enable.
-     */
     public CurrencyRegistry getCurrencyRegistry() {
         return currencyRegistry;
     }
