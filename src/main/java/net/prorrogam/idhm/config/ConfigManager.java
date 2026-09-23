@@ -46,6 +46,11 @@ public final class ConfigManager {
             }
 
             YamlDocument document = yaml.load(configPath);
+            if (document == null) {
+                return LoadResult.fail(List.of(
+                        "Config parsed to an empty document: " + configPath));
+            }
+
             return LoadResult.ok(new ConfigManager(document), warnings);
 
         } catch (IOException e) {
@@ -96,6 +101,16 @@ public final class ConfigManager {
         return value != null ? value : 300;
     }
 
+    public boolean leaderboardEnabled() {
+        Boolean value = safeGetBoolean("leaderboard", "enabled");
+        return value != null ? value : true;
+    }
+
+    public int leaderboardCacheLifetime() {
+        Integer value = safeGetInt("leaderboard", "cache-lifetime");
+        return value != null ? value : 60;
+    }
+
     public SequenceNode currenciesNode() {
         return document.getSequenceOrNull(Route.from("currencies"));
     }
@@ -107,6 +122,14 @@ public final class ConfigManager {
     private String safeGetString(String... keys) {
         try {
             return document.get(String.class, (Object[]) keys);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private Boolean safeGetBoolean(String... keys) {
+        try {
+            return document.get(Boolean.class, (Object[]) keys);
         } catch (Exception e) {
             return null;
         }

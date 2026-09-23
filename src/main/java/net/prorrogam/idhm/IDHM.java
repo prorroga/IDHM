@@ -10,6 +10,7 @@ import net.prorrogam.idhm.database.SqlStorage;
 import net.prorrogam.idhm.database.StorageManager;
 import net.prorrogam.idhm.database.StorageSettings;
 import net.prorrogam.idhm.economy.EconomyService;
+import net.prorrogam.idhm.economy.LeaderboardCache;
 import net.prorrogam.idhm.listener.PlayerJoinListener;
 import net.prorrogam.idhm.listener.PlayerQuitListener;
 import net.prorrogam.idhm.util.FoliaDetector;
@@ -25,11 +26,14 @@ import java.util.Properties;
 public final class IDHM extends JavaPlugin {
 
     private static final String DEFAULT_EXPECTED_CONFIG_VERSION = "1";
+    private static final long MIN_INTERVAL_SECONDS = 10;
 
     private volatile CurrencyRegistry currencyRegistry;
     private volatile StorageManager storageManager;
     private volatile EconomyService economyService;
+    private volatile LeaderboardCache leaderboardCache;
     private SchedulerUtil.Task flushTask;
+    private SchedulerUtil.Task leaderboardTask;
 
     @Override
     public void onEnable() {
@@ -45,9 +49,7 @@ public final class IDHM extends JavaPlugin {
         Path configPath = getDataFolder().toPath().resolve("config.yml");
         LoadResult<ConfigManager> configResult = ConfigManager.load(configPath);
         if (!configResult.success()) {
-            logWarnings(configResult.warnings());
-            logErrors("Failed to load config.yml", configResult.errors());
-            getServer().getPluginManager().disablePlugin(this);
+            failAndDisable("Failed to load config.yml", configResult);
             return;
         }
         logWarnings(configResult.warnings());
@@ -64,9 +66,7 @@ public final class IDHM extends JavaPlugin {
                 currenciesNode, defaultCurrencyId);
 
         if (!currencyResult.success()) {
-            logWarnings(currencyResult.warnings());
-            logErrors("Failed to load currencies", currencyResult.errors());
-            getServer().getPluginManager().disablePlugin(this);
+            failAndDisable("Failed to load currencies", currencyResult);
             return;
         }
         logWarnings(currencyResult.warnings());
@@ -81,17 +81,19 @@ public final class IDHM extends JavaPlugin {
                 config.storageTablePrefix()
         );
         if (!storageResult.success()) {
-            logWarnings(storageResult.warnings());
-            logErrors("Failed to load storage settings", storageResult.errors());
-            getServer().getPluginManager().disablePlugin(this);
+            failAndDisable("Failed to load storage settings", storageResult);
             return;
         }
         logWarnings(storageResult.warnings());
 
+        SqlStorage storage = null;
         try {
-            SqlStorage storage = new SqlStorage(storageResult.valueOrThrow());
+            storage = new SqlStorage(storageResult.valueOrThrow());
             this.storageManager = new StorageManager(storage, getLogger());
         } catch (Exception e) {
+            if (storage != null) {
+                storage.close();
+            }
             getLogger().severe("Failed to initialize storage: " + e.getMessage());
             getServer().getPluginManager().disablePlugin(this);
             return;
@@ -107,27 +109,43 @@ public final class IDHM extends JavaPlugin {
 
         economyService.loadAllOnline();
 
-        long intervalSeconds = config.saveIntervalSeconds();
-        if (intervalSeconds < 10) {
-            intervalSeconds = 10;
-        }
+        long flushInterval = clampInterval(
+                config.saveIntervalSeconds(),
+                "save-interval-seconds");
         this.flushTask = SchedulerUtil.runAsyncRepeating(
                 this,
                 () -> economyService.flushDirty(),
-                intervalSeconds, intervalSeconds);
+                flushInterval, flushInterval);
 
-        SchedulerUtil.runAsync(this, () ->
-                getLogger().info("Async scheduler is ready."));
+        long leaderboardLifetime = 0;
+        if (config.leaderboardEnabled()) {
+            this.leaderboardCache = new LeaderboardCache(
+                    currencyRegistry, storageManager, getLogger());
+            this.leaderboardCache.refresh();
+            leaderboardLifetime = clampInterval(
+                    config.leaderboardCacheLifetime(),
+                    "leaderboard.cache-lifetime");
+            this.leaderboardTask = SchedulerUtil.runAsyncRepeating(
+                    this,
+                    () -> leaderboardCache.refresh(),
+                    leaderboardLifetime, leaderboardLifetime);
+        }
 
         getLogger().info("IDHM enabled with " + currencyRegistry.size()
                 + " currenc" + (currencyRegistry.size() == 1 ? "y" : "ies")
-                + " (default: '" + currencyRegistry.defaultCurrency().id() + "')");
+                + " (default: '" + currencyRegistry.defaultCurrency().id() + "')"
+                + (leaderboardCache != null
+                ? ", leaderboard every " + leaderboardLifetime + "s"
+                : ", leaderboard off"));
     }
 
     @Override
     public void onDisable() {
         if (flushTask != null) {
             flushTask.cancel();
+        }
+        if (leaderboardTask != null) {
+            leaderboardTask.cancel();
         }
         if (economyService != null) {
             economyService.shutdown();
@@ -144,6 +162,20 @@ public final class IDHM extends JavaPlugin {
 
     public EconomyService getEconomyService() {
         return economyService;
+    }
+
+    public LeaderboardCache getLeaderboardCache() {
+        return leaderboardCache;
+    }
+
+    private long clampInterval(long seconds, String configKey) {
+        if (seconds < MIN_INTERVAL_SECONDS) {
+            getLogger().warning(configKey + "=" + seconds
+                    + " is below the minimum of " + MIN_INTERVAL_SECONDS
+                    + "s; using " + MIN_INTERVAL_SECONDS + "s.");
+            return MIN_INTERVAL_SECONDS;
+        }
+        return seconds;
     }
 
     private Properties loadBuildInfo() {
@@ -171,5 +203,11 @@ public final class IDHM extends JavaPlugin {
         for (String error : errors) {
             getLogger().severe("  - " + error);
         }
+    }
+
+    private void failAndDisable(String prefix, LoadResult<?> result) {
+        logWarnings(result.warnings());
+        logErrors(prefix, result.errors());
+        getServer().getPluginManager().disablePlugin(this);
     }
 }

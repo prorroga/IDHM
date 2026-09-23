@@ -373,15 +373,14 @@ public final class EconomyService {
                 }
 
                 BigDecimal newFrom = fromBase.subtract(amount);
-                BigDecimal newTo = candidateTo;
 
                 fromPb.put(currencyId, newFrom);
-                toPb.put(currencyId, newTo);
+                toPb.put(currencyId, candidateTo);
 
                 dirty.add(from);
                 dirty.add(to);
 
-                return new TransferResult(newFrom, newTo);
+                return new TransferResult(newFrom, candidateTo);
             }
         }
     }
