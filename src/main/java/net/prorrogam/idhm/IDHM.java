@@ -14,6 +14,7 @@ import net.prorrogam.idhm.database.StorageManager;
 import net.prorrogam.idhm.database.StorageSettings;
 import net.prorrogam.idhm.economy.EconomyService;
 import net.prorrogam.idhm.economy.LeaderboardCache;
+import net.prorrogam.idhm.hook.IDHMPlaceholderExpansion;
 import net.prorrogam.idhm.listener.PlayerJoinListener;
 import net.prorrogam.idhm.listener.PlayerQuitListener;
 import net.prorrogam.idhm.util.FoliaDetector;
@@ -140,6 +141,16 @@ public final class IDHM extends JavaPlugin {
             VaultHook.register(this, economyService, currencyRegistry);
         } catch (Throwable t) {
             getLogger().log(Level.WARNING, "Failed to register Vault hook", t);
+        }
+
+        if (getServer().getPluginManager().getPlugin("PlaceholderAPI") != null) {
+            try {
+                new IDHMPlaceholderExpansion(this).register();
+                getLogger().info("Registered PlaceholderAPI expansion 'idhm'.");
+            } catch (Throwable t) {
+                getLogger().log(Level.WARNING,
+                        "Failed to register PlaceholderAPI expansion", t);
+            }
         }
 
         this.getLifecycleManager().registerEventHandler(LifecycleEvents.COMMANDS, event -> {

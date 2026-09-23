@@ -2,6 +2,7 @@ package net.prorrogam.idhm.currency;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.text.DecimalFormat;
 import java.util.List;
 
 public record Currency(
@@ -55,5 +56,41 @@ public record Currency(
 
     public BigDecimal normalize(BigDecimal value) {
         return value.setScale(maxDecimals, RoundingMode.HALF_UP);
+    }
+
+    public String raw(BigDecimal value) {
+        return normalize(value).stripTrailingZeros().toPlainString();
+    }
+
+    public String formatted(BigDecimal value) {
+        String amount = decimal(decimalFormat, normalize(value));
+        return format
+                .replace("%amount%", amount)
+                .replace("%symbol%", symbol)
+                .replace("%currency%", name);
+    }
+
+    public String formattedShort(BigDecimal value) {
+        String amount = decimal(decimalFormatShort, normalize(value));
+        return formatShort
+                .replace("%amount%", amount)
+                .replace("%symbol%", symbol)
+                .replace("%currency%", name);
+    }
+
+    public String commas(BigDecimal value) {
+        return decimal("#,##0", normalize(value));
+    }
+
+    public String integer(BigDecimal value) {
+        return value.setScale(0, RoundingMode.DOWN).toPlainString();
+    }
+
+    private String decimal(String pattern, BigDecimal value) {
+        try {
+            return new DecimalFormat(pattern).format(value);
+        } catch (IllegalArgumentException e) {
+            return value.stripTrailingZeros().toPlainString();
+        }
     }
 }
