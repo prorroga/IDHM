@@ -15,14 +15,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
-/**
- * Parses and validates the 'currencies' section of config.yml.
- * <p>
- * Convention: problems that affect a single currency but don't prevent
- * the plugin from working go to {@code warnings}. Only fatal conditions
- * (missing section, no valid currencies, unresolvable default, broken
- * registry) go to {@code errors}.
- */
 public final class CurrencyLoader {
 
     private static final Pattern ID_PATTERN = Pattern.compile("^[a-z][a-z0-9_]*$");
@@ -55,7 +47,6 @@ public final class CurrencyLoader {
             return LoadResult.fail(errors);
         }
 
-        // 1. Parse each entry. Per-currency problems go to warnings.
         List<Currency> currencies = new ArrayList<>();
         for (int i = 0; i < node.size(); i++) {
             SectionNode entry = node.getSectionOrNull(Route.from(i));
@@ -76,6 +67,17 @@ public final class CurrencyLoader {
         if (currencies.isEmpty()) {
             errors.add("No valid currencies were loaded from 'currencies'");
             return LoadResult.fail(errors, warnings);
+        }
+
+        long vaultCount = currencies.stream().filter(Currency::vault).count();
+        if (vaultCount > 1) {
+            String first = currencies.stream()
+                    .filter(Currency::vault)
+                    .findFirst()
+                    .map(Currency::id)
+                    .orElse("?");
+            warnings.add("Multiple currencies have 'vault: true' (" + vaultCount
+                    + "). Only the first ('" + first + "') will be registered with Vault.");
         }
 
         String resolvedDefault = resolveDefault(currencies, defaultId, warnings, errors);
@@ -109,7 +111,7 @@ public final class CurrencyLoader {
             return null;
         }
 
-        String context = "Currency '" + id + "'";    // ← aquí
+        String context = "Currency '" + id + "'";
 
         String name = getString(entry, "name");
         if (name == null || name.isBlank()) {
@@ -330,7 +332,6 @@ public final class CurrencyLoader {
         return null;
     }
 
-    // HELPERS SECTION, HELP ME PLS, IDK WHAT´M DOING
     private static String getString(SectionNode entry, String key) {
         return entry.get(String.class, key);
     }

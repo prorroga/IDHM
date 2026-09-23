@@ -1,4 +1,5 @@
 import org.apache.tools.ant.filters.ReplaceTokens
+import org.gradle.kotlin.dsl.repositories
 
 plugins {
     id("java-library")
@@ -10,10 +11,14 @@ repositories {
     mavenCentral()
     maven("https://repo.papermc.io/repository/maven-public/")
     maven("https://repo.catnies.top/releases")
+    maven("https://jitpack.io")
 }
 
 dependencies {
     compileOnly("io.papermc.paper:paper-api:1.21.8-R0.1-SNAPSHOT")
+    compileOnly("com.github.MilkBowl:VaultAPI:1.7") {
+        exclude(group = "org.bukkit", module = "bukkit")
+    }
     implementation("net.momirealms:sparrow-yaml:1.0.6")
     implementation("com.h2database:h2:2.3.232")
     implementation("com.zaxxer:HikariCP:6.2.1")
@@ -48,6 +53,8 @@ tasks {
 
     runServer {
         minecraftVersion("1.21.8")
+        jvmArgs("-Xms2G", "-Xmx2G", "-Duser.language=en", "-Duser.country=US")
+        workingDirectory.set(layout.projectDirectory.dir("run"))
     }
 
     processResources {
@@ -57,19 +64,19 @@ tasks {
         inputs.property("config_version", configVersion)
         inputs.property("description", projectDescription)
 
-        filesMatching("plugin.yml") {
-            filter<ReplaceTokens>("tokens" to mapOf(
+        filesMatching("paper-plugin.yml") {
+            filter(ReplaceTokens::class, "tokens" to mapOf(
                 "version" to pluginVersion,
                 "description" to projectDescription
             ))
         }
         filesMatching("config.yml") {
-            filter<ReplaceTokens>("tokens" to mapOf(
+            filter(ReplaceTokens::class, "tokens" to mapOf(
                 "config_version" to configVersion
             ))
         }
         filesMatching("idhm.properties") {
-            filter<ReplaceTokens>("tokens" to mapOf(
+            filter(ReplaceTokens::class, "tokens" to mapOf(
                 "plugin_version" to pluginVersion,
                 "config_version" to configVersion
             ))

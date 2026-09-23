@@ -68,28 +68,26 @@ public final class EconomyService {
             return;
         }
 
-        storageManager.submit(s -> s.loadAllBalances(uuid))
-                .whenComplete((balances, ex) -> {
-                    try {
-                        if (ex != null) {
-                            logger.warning("Failed to load balances for " + uuid
-                                    + ": " + ex.getMessage());
-                            return;
-                        }
-                        if (!onlinePlayers.contains(uuid)) {
-                            return;
-                        }
-                        PlayerBalances loaded = new PlayerBalances();
-                        balances.forEach(loaded::put);
-                        PlayerBalances prev = cache.putIfAbsent(uuid, loaded);
-                        if (prev != null) {
-                            balances.forEach(prev::putIfAbsent);
-                        }
-                    } finally {
-                        loadGates.remove(uuid, gate);
-                        gate.complete(null);
-                    }
-                });
+        storageManager.submit(s -> s.loadAllBalances(uuid)).whenComplete((balances, ex) -> {
+            try {
+                if (ex != null) {
+                    logger.warning("Failed to load balances for " + uuid + ": " + ex.getMessage());
+                    return;
+                }
+                if (!onlinePlayers.contains(uuid)) {
+                    return;
+                }
+                PlayerBalances loaded = new PlayerBalances();
+                balances.forEach(loaded::put);
+                PlayerBalances prev = cache.putIfAbsent(uuid, loaded);
+                if (prev != null) {
+                    balances.forEach(prev::putIfAbsent);
+                }
+            } finally {
+                loadGates.remove(uuid, gate);
+                gate.complete(null);
+            }
+        });
     }
 
     public void unloadPlayer(UUID uuid, String playerName) {
@@ -106,8 +104,7 @@ public final class EconomyService {
         }
 
         List<Storage.BalanceUpdate> updates = snapshot.entrySet().stream()
-                .map(e -> new Storage.BalanceUpdate(
-                        uuid, playerName, e.getKey(), e.getValue()))
+                .map(e -> new Storage.BalanceUpdate(uuid, playerName, e.getKey(), e.getValue()))
                 .toList();
 
         storageManager.submit(s -> {
@@ -119,13 +116,12 @@ public final class EconomyService {
             }
             if (shuttingDown) {
                 logger.severe("Failed to flush balances for " + playerName
-                        + " (" + uuid + ") on quit, and the plugin is"
-                        + " shutting down: data lost. Cause: " + ex.getMessage());
+                        + " (" + uuid + ") on quit, and the plugin is shutting down: data lost. Cause: "
+                        + ex.getMessage());
                 return;
             }
             logger.severe("Failed to flush balances for " + playerName
-                    + " (" + uuid + ") on quit: " + ex.getMessage()
-                    + ". Re-caching for retry.");
+                    + " (" + uuid + ") on quit: " + ex.getMessage() + ". Re-caching for retry.");
             PlayerBalances reinserted = cache.putIfAbsent(uuid, pb);
             if (reinserted == null) {
                 dirty.add(uuid);
@@ -158,8 +154,7 @@ public final class EconomyService {
                 continue;
             }
             List<Storage.BalanceUpdate> updates = snapshot.entrySet().stream()
-                    .map(e -> new Storage.BalanceUpdate(
-                            uuid, name, e.getKey(), e.getValue()))
+                    .map(e -> new Storage.BalanceUpdate(uuid, name, e.getKey(), e.getValue()))
                     .toList();
             futures.add(storageManager.submit(s -> {
                 s.saveBalances(updates);
@@ -202,8 +197,7 @@ public final class EconomyService {
             }
             String name = playerNames.getOrDefault(uuid, fallbackName(uuid));
             List<Storage.BalanceUpdate> updates = snapshot.entrySet().stream()
-                    .map(e -> new Storage.BalanceUpdate(
-                            uuid, name, e.getKey(), e.getValue()))
+                    .map(e -> new Storage.BalanceUpdate(uuid, name, e.getKey(), e.getValue()))
                     .toList();
 
             futures.add(storageManager.submit(s -> {
@@ -234,6 +228,20 @@ public final class EconomyService {
         return value != null ? value : currency.defaultBalance();
     }
 
+    public boolean isOnline(UUID uuid) {
+        return onlinePlayers.contains(uuid);
+    }
+
+    public Map<UUID, Map<String, BigDecimal>> cachedBalances() {
+        Map<UUID, Map<String, BigDecimal>> result = new ConcurrentHashMap<>();
+        cache.forEach((uuid, pb) -> result.put(uuid, pb.snapshot()));
+        return result;
+    }
+
+    public String cachedName(UUID uuid) {
+        return playerNames.get(uuid);
+    }
+
     public CompletableFuture<BigDecimal> depositAsync(UUID uuid, String currencyId,
                                                       BigDecimal amount) {
         return mutateAsync(uuid, currencyId, amount, true);
@@ -242,6 +250,97 @@ public final class EconomyService {
     public CompletableFuture<BigDecimal> withdrawAsync(UUID uuid, String currencyId,
                                                        BigDecimal amount) {
         return mutateAsync(uuid, currencyId, amount, false);
+    }
+
+    public CompletableFuture<BigDecimal> setBalanceAsync(UUID uuid, String currencyId,
+                                                         BigDecimal newValue) {
+        CompletableFuture<Void> gate = loadGates.get(uuid);
+        if (gate != null) {
+            return gate.thenCompose(v -> setBalanceAsync(uuid, currencyId, newValue));
+        }
+
+        Currency currency = registry.get(currencyId);
+        if (currency == null) {
+            return CompletableFuture.failedFuture(
+                    new IllegalArgumentException("Unknown currency: " + currencyId));
+        }
+        if (newValue.signum() < 0) {
+            return CompletableFuture.failedFuture(
+                    new IllegalArgumentException("Amount must not be negative, got " + newValue));
+        }
+        BigDecimal max = currency.maxBalance();
+        if (max != null && newValue.compareTo(max) > 0) {
+            return CompletableFuture.failedFuture(
+                    new MaxBalanceException(currencyId, newValue, max));
+        }
+
+        PlayerBalances pb = cache.get(uuid);
+        if (pb == null) {
+            CompletableFuture<Void> lateGate = loadGates.get(uuid);
+            if (lateGate != null) {
+                return lateGate.thenCompose(v -> setBalanceAsync(uuid, currencyId, newValue));
+            }
+            return CompletableFuture.failedFuture(
+                    new IllegalStateException("Player is not online: " + uuid));
+        }
+
+        Object lock = lockFor(uuid);
+        try {
+            synchronized (lock) {
+                pb.put(currencyId, newValue);
+                dirty.add(uuid);
+                return CompletableFuture.completedFuture(newValue);
+            }
+        } catch (RuntimeException e) {
+            return CompletableFuture.failedFuture(e);
+        }
+    }
+
+    public BigDecimal depositSync(UUID uuid, String currencyId, BigDecimal amount) {
+        return mutateSync(uuid, currencyId, amount, true);
+    }
+
+    public BigDecimal withdrawSync(UUID uuid, String currencyId, BigDecimal amount) {
+        return mutateSync(uuid, currencyId, amount, false);
+    }
+
+    private BigDecimal mutateSync(UUID uuid, String currencyId,
+                                  BigDecimal amount, boolean deposit) {
+        if (loadGates.containsKey(uuid)) {
+            throw new IllegalStateException("Player is still loading");
+        }
+        Currency currency = registry.get(currencyId);
+        if (currency == null) {
+            throw new IllegalArgumentException("Unknown currency: " + currencyId);
+        }
+        if (amount.signum() <= 0) {
+            throw new IllegalArgumentException("Amount must be positive, got " + amount);
+        }
+        PlayerBalances pb = cache.get(uuid);
+        if (pb == null) {
+            throw new IllegalStateException("Player is not online: " + uuid);
+        }
+        Object lock = lockFor(uuid);
+        synchronized (lock) {
+            BigDecimal newBalance = pb.compute(currencyId, (id, current) -> {
+                BigDecimal base = current != null ? current : currency.defaultBalance();
+                if (deposit) {
+                    BigDecimal candidate = base.add(amount);
+                    BigDecimal max = currency.maxBalance();
+                    if (max != null && candidate.compareTo(max) > 0) {
+                        throw new MaxBalanceException(currencyId, candidate, max);
+                    }
+                    return candidate;
+                } else {
+                    if (base.compareTo(amount) < 0) {
+                        throw new InsufficientFundsException(currencyId, base, amount);
+                    }
+                    return base.subtract(amount);
+                }
+            });
+            dirty.add(uuid);
+            return newBalance;
+        }
     }
 
     public CompletableFuture<TransferResult> transferAsync(UUID from, UUID to,

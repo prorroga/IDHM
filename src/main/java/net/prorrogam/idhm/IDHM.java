@@ -1,9 +1,12 @@
 package net.prorrogam.idhm;
 
+import io.papermc.paper.command.brigadier.Commands;
+import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
 import net.momirealms.sparrow.yaml.node.SequenceNode;
 import net.prorrogam.idhm.config.ConfigManager;
 import net.prorrogam.idhm.config.ConfigVersion;
 import net.prorrogam.idhm.config.LoadResult;
+import net.prorrogam.idhm.command.IdhmCommand;
 import net.prorrogam.idhm.currency.CurrencyLoader;
 import net.prorrogam.idhm.currency.CurrencyRegistry;
 import net.prorrogam.idhm.database.SqlStorage;
@@ -16,6 +19,8 @@ import net.prorrogam.idhm.listener.PlayerQuitListener;
 import net.prorrogam.idhm.util.FoliaDetector;
 import net.prorrogam.idhm.util.SchedulerUtil;
 import org.bukkit.plugin.java.JavaPlugin;
+import net.prorrogam.idhm.hook.VaultHook;
+import java.util.logging.Level;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -120,7 +125,7 @@ public final class IDHM extends JavaPlugin {
         long leaderboardLifetime = 0;
         if (config.leaderboardEnabled()) {
             this.leaderboardCache = new LeaderboardCache(
-                    currencyRegistry, storageManager, getLogger());
+                    currencyRegistry, storageManager, economyService, getLogger());
             this.leaderboardCache.refresh();
             leaderboardLifetime = clampInterval(
                     config.leaderboardCacheLifetime(),
@@ -130,6 +135,22 @@ public final class IDHM extends JavaPlugin {
                     () -> leaderboardCache.refresh(),
                     leaderboardLifetime, leaderboardLifetime);
         }
+
+        try {
+            VaultHook.register(this, economyService, currencyRegistry);
+        } catch (Throwable t) {
+            getLogger().log(Level.WARNING, "Failed to register Vault hook", t);
+        }
+
+        this.getLifecycleManager().registerEventHandler(LifecycleEvents.COMMANDS, event -> {
+            Commands commands = event.registrar();
+            commands.register(
+                    new IdhmCommand(this, currencyRegistry, economyService,
+                            leaderboardCache).build(),
+                    "IDHM economy command",
+                    List.of("eco", "economy")
+            );
+        });
 
         getLogger().info("IDHM enabled with " + currencyRegistry.size()
                 + " currenc" + (currencyRegistry.size() == 1 ? "y" : "ies")

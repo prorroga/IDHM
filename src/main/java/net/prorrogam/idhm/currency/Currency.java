@@ -1,6 +1,7 @@
 package net.prorrogam.idhm.currency;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.List;
 
 public record Currency(
@@ -31,18 +32,28 @@ public record Currency(
         return commands.isEmpty() ? id : commands.getFirst();
     }
 
-    /**
-     * Returns a copy of this currency with a different command list.
-     * <p>
-     * Keeps the 16-field record immutable while avoiding manual
-     * reconstruction at every call site. If a new field is added to
-     * the record, only this method needs updating.
-     */
     public Currency withCommands(List<String> newCommands) {
         return new Currency(
                 id, name, symbol, defaultBalance, maxBalance,
                 payable, decimal, maxDecimals, vault, local, balanceShorthand,
                 format, formatShort, decimalFormat, decimalFormatShort,
                 List.copyOf(newCommands));
+    }
+
+    public boolean accepts(BigDecimal value) {
+        if (value == null) {
+            return false;
+        }
+        if (value.signum() < 0) {
+            return false;
+        }
+        if (!decimal && value.stripTrailingZeros().scale() > 0) {
+            return false;
+        }
+        return value.stripTrailingZeros().scale() <= maxDecimals;
+    }
+
+    public BigDecimal normalize(BigDecimal value) {
+        return value.setScale(maxDecimals, RoundingMode.HALF_UP);
     }
 }

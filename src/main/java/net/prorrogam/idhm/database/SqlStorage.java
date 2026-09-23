@@ -17,16 +17,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-/**
- * SQL-backed storage using HikariCP.
- * <p>
- * Supports every dialect declared in {@link SqlDialect}. The dialect
- * determines three things: the JDBC driver class name, the upsert
- * syntax, and whether the pool is limited to a single connection
- * (SQLite).
- * <p>
- * The schema is created by {@link MigrationRunner} on construction.
- */
 public final class SqlStorage implements Storage {
 
     private static final String COLUMNS = "player_uuid, player_name, currency_id, balance";
@@ -133,13 +123,12 @@ public final class SqlStorage implements Storage {
 
         String sql = "SELECT player_uuid, player_name, balance FROM " + tableName
                 + " WHERE currency_id = ? AND balance > 0"
-                + " ORDER BY balance DESC";
+                + " ORDER BY balance DESC LIMIT ?";
 
         List<BalanceEntry> result = new ArrayList<>();
 
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
-            stmt.setString(1, currencyId);
             stmt.setString(1, currencyId);
             stmt.setInt(2, limit);
             try (ResultSet rs = stmt.executeQuery()) {
