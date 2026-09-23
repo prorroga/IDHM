@@ -9,6 +9,9 @@ import net.prorrogam.idhm.currency.CurrencyRegistry;
 import net.prorrogam.idhm.database.SqlStorage;
 import net.prorrogam.idhm.database.StorageManager;
 import net.prorrogam.idhm.database.StorageSettings;
+import net.prorrogam.idhm.economy.EconomyService;
+import net.prorrogam.idhm.listener.PlayerJoinListener;
+import net.prorrogam.idhm.listener.PlayerQuitListener;
 import net.prorrogam.idhm.util.FoliaDetector;
 import net.prorrogam.idhm.util.SchedulerUtil;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -25,6 +28,8 @@ public final class IDHM extends JavaPlugin {
 
     private volatile CurrencyRegistry currencyRegistry;
     private volatile StorageManager storageManager;
+    private volatile EconomyService economyService;
+    private SchedulerUtil.Task flushTask;
 
     @Override
     public void onEnable() {
@@ -92,6 +97,25 @@ public final class IDHM extends JavaPlugin {
             return;
         }
 
+        this.economyService = new EconomyService(
+                currencyRegistry, storageManager, getLogger());
+
+        getServer().getPluginManager().registerEvents(
+                new PlayerJoinListener(economyService), this);
+        getServer().getPluginManager().registerEvents(
+                new PlayerQuitListener(economyService), this);
+
+        economyService.loadAllOnline();
+
+        long intervalSeconds = config.saveIntervalSeconds();
+        if (intervalSeconds < 10) {
+            intervalSeconds = 10;
+        }
+        this.flushTask = SchedulerUtil.runAsyncRepeating(
+                this,
+                () -> economyService.flushDirty(),
+                intervalSeconds, intervalSeconds);
+
         SchedulerUtil.runAsync(this, () ->
                 getLogger().info("Async scheduler is ready."));
 
@@ -102,6 +126,12 @@ public final class IDHM extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (flushTask != null) {
+            flushTask.cancel();
+        }
+        if (economyService != null) {
+            economyService.shutdown();
+        }
         if (storageManager != null) {
             storageManager.close();
         }
@@ -110,6 +140,10 @@ public final class IDHM extends JavaPlugin {
 
     public CurrencyRegistry getCurrencyRegistry() {
         return currencyRegistry;
+    }
+
+    public EconomyService getEconomyService() {
+        return economyService;
     }
 
     private Properties loadBuildInfo() {

@@ -7,25 +7,6 @@ import org.bukkit.plugin.Plugin;
 
 import java.util.concurrent.TimeUnit;
 
-/**
- * Fachada unificada de schedulers para Folia, Paper y Spigot.
- * <p>
- * Reglas de diseño:
- * <ul>
- *   <li>Toda tarea se agenda; ninguna ejecuta inline. Esto garantiza
- *       semántica idéntica en las tres plataformas.</li>
- *   <li>Las referencias a clases de Folia se resuelven de forma lazy.
- *       En Spigot, {@code FoliaTaskHandle} nunca se instancia porque
- *       {@code IS_FOLIA} es {@code false}, así que la JVM no intenta
- *       cargar esas clases.</li>
- * <b>Métodos pendientes</b> (se añadirán cuando aparezca un caso real,
- * no antes):
- * <ul>
- *   <li>{@code runLaterForEntity} — para diferir tareas en el contexto
- *       de una entidad.</li>
- *   <li>{@code runLaterForRegion} — para diferir tareas en el contexto
- *       de una región.</li>
- */
 public final class SchedulerUtil {
 
     private SchedulerUtil() {}

@@ -5,21 +5,6 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiFunction;
 
-/**
- * In-memory balances for a single online player.
- * <p>
- * Backed by a {@link ConcurrentHashMap}. Individual reads and writes are
- * thread-safe. Compound operations (read-modify-write) must use
- * {@link #compute} to be atomic.
- * <p>
- * The map is keyed by currency id. A missing key means the player has
- * never held that currency; callers should fall back to the currency's
- * default balance.
- * <p>
- * This class does not track which currencies have been modified since
- * the last flush. That is handled by {@code EconomyService}, which owns
- * the dirty set.
- */
 public final class PlayerBalances {
 
     private final ConcurrentHashMap<String, BigDecimal> balances = new ConcurrentHashMap<>();
@@ -55,24 +40,6 @@ public final class PlayerBalances {
         return balances.putIfAbsent(currencyId, amount) == null;
     }
 
-    /**
-     * Atomically applies an update to a currency balance.
-     * <p>
-     * The remapping function receives the current value (or {@code null}
-     * if absent) and returns the new value.
-     * <p>
-     * <b>Important — null return deletes the entry:</b> per
-     * {@link ConcurrentHashMap#compute} contract, if the remapper returns
-     * {@code null}, the entry is removed. In an economy context this is
-     * almost never what you want: to reject an update, return the current
-     * value unchanged or throw; reserve {@code null} for intentional
-     * deletion.
-     * <p>
-     * <b>Important — remapper may re-run:</b> under contention, the
-     * remapping function may be invoked multiple times with the latest
-     * observed value each time. It must be free of side effects. Only the
-     * final successful return value is stored.
-     */
     public BigDecimal compute(String currencyId,
                               BiFunction<String, BigDecimal, BigDecimal> remapper) {
         return balances.compute(currencyId, remapper);

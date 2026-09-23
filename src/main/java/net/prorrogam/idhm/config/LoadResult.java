@@ -2,15 +2,6 @@ package net.prorrogam.idhm.config;
 
 import java.util.List;
 
-/**
- * Result of a load operation that can fail in an expected way.
- * <p>
- * {@code warnings} are non-fatal issues; {@code errors} are fatal.
- * <p>
- * <b>Contract:</b> {@code value} is {@code null} if and only if
- * {@code errors} is non-empty. After a {@link #success()} that returns
- * true, {@link #value()} never returns {@code null}.
- */
 public record LoadResult<T>(
         T value,
         List<String> warnings,
@@ -35,10 +26,6 @@ public record LoadResult<T>(
         return errors.isEmpty();
     }
 
-    /**
-     * @return the value if {@link #success()}.
-     * @throws IllegalStateException if the load failed.
-     */
     public T valueOrThrow() {
         if (!success()) {
             throw new IllegalStateException(
@@ -55,11 +42,6 @@ public record LoadResult<T>(
         return new LoadResult<>(value, List.of(), List.of());
     }
 
-    /**
-     * @throws IllegalArgumentException if {@code errors} is null or empty.
-     *         A failure without a reason is not a failure; use {@link #ok}
-     *         if the load succeeded.
-     */
     public static <T> LoadResult<T> fail(List<String> errors) {
         if (errors == null || errors.isEmpty()) {
             throw new IllegalArgumentException(
@@ -69,9 +51,6 @@ public record LoadResult<T>(
         return fail(errors, List.of());
     }
 
-    /**
-     * @throws IllegalArgumentException if {@code errors} is null or empty.
-     */
     public static <T> LoadResult<T> fail(List<String> errors, List<String> warnings) {
         if (errors == null || errors.isEmpty()) {
             throw new IllegalArgumentException(

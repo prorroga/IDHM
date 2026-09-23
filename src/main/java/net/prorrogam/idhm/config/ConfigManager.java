@@ -12,12 +12,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Loads and exposes the config.yml file.
- * <p>
- * The user file is created from the jar-packaged default if missing.
- * All reads return null on missing paths; callers decide what to do.
- */
 public final class ConfigManager {
 
     private static final String RESOURCE_NAME = "config.yml";
@@ -97,6 +91,11 @@ public final class ConfigManager {
         return value != null ? value : "";
     }
 
+    public int saveIntervalSeconds() {
+        Integer value = safeGetInt("settings", "save-interval-seconds");
+        return value != null ? value : 300;
+    }
+
     public SequenceNode currenciesNode() {
         return document.getSequenceOrNull(Route.from("currencies"));
     }
@@ -120,5 +119,4 @@ public final class ConfigManager {
             return null;
         }
     }
-
 }

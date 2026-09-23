@@ -10,6 +10,7 @@ import org.bukkit.entity.Player;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -19,25 +20,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
-/**
- * Core economy service.
- * <p>
- * Owns the online-player balance cache, the dirty set, the per-player
- * locks, and the join gates. All mutations go through this class.
- * <p>
- * <b>Online only.</b> Deposit and withdraw require the player to have a
- * cached entry (i.e. to be online). Offline support is deferred.
- * <p>
- * <b>Threading (Folia):</b> reads use {@link ConcurrentHashMap} directly.
- * Writes acquire a per-player lock for cross-operation exclusion; the
- * critical section is pure in-memory arithmetic (nanoseconds). Database
- * I/O goes through {@link StorageManager} asynchronously.
- * <p>
- * <b>Blocking:</b> deposit/withdraw/transfer acquire a per-player lock
- * and execute the critical section on the caller thread. The section is
- * pure in-memory arithmetic; callers should not extend it with blocking
- * work.
- */
 public final class EconomyService {
 
     private final CurrencyRegistry registry;
@@ -48,13 +30,19 @@ public final class EconomyService {
     private final Set<UUID> dirty = ConcurrentHashMap.newKeySet();
     private final Set<UUID> onlinePlayers = ConcurrentHashMap.newKeySet();
     private final ConcurrentHashMap<UUID, String> playerNames = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<UUID, Object> playerLocks = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, CompletableFuture<Void>> loadGates = new ConcurrentHashMap<>();
 
-    // Set to true by shutdown(). Never reset: a new EconomyService
-    // instance is created on every onEnable (including /reload), so this
-    // flag is per-lifecycle.
     private volatile boolean shuttingDown = false;
+
+    private static final int LOCK_STRIPES = 256;
+
+    private final Object[] playerLocks = new Object[LOCK_STRIPES];
+
+    {
+        for (int i = 0; i < LOCK_STRIPES; i++) {
+            playerLocks[i] = new Object();
+        }
+    }
 
     public EconomyService(CurrencyRegistry registry,
                           StorageManager storageManager,
@@ -63,10 +51,6 @@ public final class EconomyService {
         this.storageManager = storageManager;
         this.logger = logger;
     }
-
-    // ------------------------------------------------------------------
-    // Lifecycle: join / quit
-    // ------------------------------------------------------------------
 
     public void markOnline(UUID uuid, String name) {
         onlinePlayers.add(uuid);
@@ -99,8 +83,6 @@ public final class EconomyService {
                         balances.forEach(loaded::put);
                         PlayerBalances prev = cache.putIfAbsent(uuid, loaded);
                         if (prev != null) {
-                            // Only reachable if a previous unloadPlayer failed
-                            // and re-inserted its stale container.
                             balances.forEach(prev::putIfAbsent);
                         }
                     } finally {
@@ -199,20 +181,46 @@ public final class EconomyService {
         loadGates.clear();
     }
 
-    // ------------------------------------------------------------------
-    // Reads (sync, cache-only)
-    // ------------------------------------------------------------------
+    public CompletableFuture<Void> flushDirty() {
+        if (dirty.isEmpty()) {
+            return CompletableFuture.completedFuture(null);
+        }
 
-    /**
-     * Returns the cached balance, or the currency's default if the player
-     * is offline or has never held it.
-     * <p>
-     * <b>Never blocks.</b> Safe to call from any thread. Used by Vault.
-     * <b>Cache-only:</b> if the player is offline, the returned value is
-     * the currency default, not the real balance from the database.
-     *
-     * @throws IllegalArgumentException if {@code currencyId} is unknown
-     */
+        Set<UUID> batch = new HashSet<>(dirty);
+        dirty.removeAll(batch);
+
+        List<CompletableFuture<Object>> futures = new ArrayList<>();
+
+        for (UUID uuid : batch) {
+            PlayerBalances pb = cache.get(uuid);
+            if (pb == null) {
+                continue;
+            }
+            Map<String, BigDecimal> snapshot = pb.snapshot();
+            if (snapshot.isEmpty()) {
+                continue;
+            }
+            String name = playerNames.getOrDefault(uuid, fallbackName(uuid));
+            List<Storage.BalanceUpdate> updates = snapshot.entrySet().stream()
+                    .map(e -> new Storage.BalanceUpdate(
+                            uuid, name, e.getKey(), e.getValue()))
+                    .toList();
+
+            futures.add(storageManager.submit(s -> {
+                s.saveBalances(updates);
+                return null;
+            }).whenComplete((v, ex) -> {
+                if (ex != null) {
+                    logger.warning("Periodic flush failed for " + uuid
+                            + ": " + ex.getMessage() + ". Re-marking dirty.");
+                    dirty.add(uuid);
+                }
+            }));
+        }
+
+        return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
+    }
+
     public BigDecimal balance(UUID uuid, String currencyId) {
         Currency currency = registry.get(currencyId);
         if (currency == null) {
@@ -225,10 +233,6 @@ public final class EconomyService {
         BigDecimal value = pb.get(currencyId);
         return value != null ? value : currency.defaultBalance();
     }
-
-    // ------------------------------------------------------------------
-    // Writes (async API, sync implementation)
-    // ------------------------------------------------------------------
 
     public CompletableFuture<BigDecimal> depositAsync(UUID uuid, String currencyId,
                                                       BigDecimal amount) {
@@ -243,7 +247,6 @@ public final class EconomyService {
     public CompletableFuture<TransferResult> transferAsync(UUID from, UUID to,
                                                            String currencyId,
                                                            BigDecimal amount) {
-        // Gates: wait for any in-flight load of either player.
         CompletableFuture<Void> fromGate = loadGates.get(from);
         CompletableFuture<Void> toGate = loadGates.get(to);
         if (fromGate != null || toGate != null) {
@@ -270,8 +273,6 @@ public final class EconomyService {
         PlayerBalances fromPb = cache.get(from);
         PlayerBalances toPb = cache.get(to);
         if (fromPb == null || toPb == null) {
-            // Late-gate: the load may have been installed between our
-            // first gate check and the cache read.
             CompletableFuture<Void> lateGateA = loadGates.get(from);
             CompletableFuture<Void> lateGateB = loadGates.get(to);
             if (lateGateA != null || lateGateB != null) {
@@ -291,10 +292,6 @@ public final class EconomyService {
             return CompletableFuture.failedFuture(e);
         }
     }
-
-    // ------------------------------------------------------------------
-    // Internal: shared mutation logic
-    // ------------------------------------------------------------------
 
     private CompletableFuture<BigDecimal> mutateAsync(UUID uuid, String currencyId,
                                                       BigDecimal amount,
@@ -354,13 +351,13 @@ public final class EconomyService {
     private TransferResult doTransfer(PlayerBalances fromPb, PlayerBalances toPb,
                                       UUID from, UUID to, String currencyId,
                                       Currency currency, BigDecimal amount) {
-        // Lock ordering by UUID to prevent deadlocks between two transfers
-        // running in opposite directions.
-        Object firstLock = lockFor(from.compareTo(to) < 0 ? from : to);
-        Object secondLock = lockFor(from.compareTo(to) < 0 ? to : from);
+        int idxFrom = Math.floorMod(from.hashCode(), LOCK_STRIPES);
+        int idxTo = Math.floorMod(to.hashCode(), LOCK_STRIPES);
+        int firstIdx = Math.min(idxFrom, idxTo);
+        int secondIdx = Math.max(idxFrom, idxTo);
 
-        synchronized (firstLock) {
-            synchronized (secondLock) {
+        synchronized (playerLocks[firstIdx]) {
+            synchronized (playerLocks[secondIdx]) {
                 BigDecimal fromBase = fromPb.get(currencyId);
                 BigDecimal toBase = toPb.get(currencyId);
                 if (fromBase == null) fromBase = currency.defaultBalance();
@@ -390,7 +387,7 @@ public final class EconomyService {
     }
 
     private Object lockFor(UUID uuid) {
-        return playerLocks.computeIfAbsent(uuid, k -> new Object());
+        return playerLocks[Math.floorMod(uuid.hashCode(), LOCK_STRIPES)];
     }
 
     private String fallbackName(UUID uuid) {
