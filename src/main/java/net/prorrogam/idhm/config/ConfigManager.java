@@ -96,6 +96,21 @@ public final class ConfigManager {
         return value != null ? value : "";
     }
 
+    public String defaultLocale() {
+        String value = safeGetString("language", "default-locale");
+        return value != null ? value : "en";
+    }
+
+    public String forcedLocale() {
+        String value = safeGetString("language", "forced-locale");
+        return value != null ? value : "";
+    }
+
+    public boolean fallbackToPrefix() {
+        Boolean value = safeGetBoolean("language", "fallback-to-prefix");
+        return value != null ? value : true;
+    }
+
     public int saveIntervalSeconds() {
         Integer value = safeGetInt("settings", "save-interval-seconds");
         return value != null ? value : 300;
