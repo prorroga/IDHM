@@ -6,7 +6,6 @@ import net.prorrogam.idhm.currency.CurrencyRegistry;
 import net.prorrogam.idhm.database.StorageManager;
 
 import java.math.BigDecimal;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,6 +18,7 @@ import java.util.logging.Logger;
 public final class LeaderboardCache {
 
     private static final int TOP_SIZE = 100;
+    private static final long MERGED_TTL_MILLIS = 1_000L;
 
     private final CurrencyRegistry registry;
     private final StorageManager storageManager;
@@ -28,11 +28,16 @@ public final class LeaderboardCache {
     private final Map<String, AtomicReference<Snapshot>> snapshots =
             new ConcurrentHashMap<>();
 
-    public record Snapshot(
-            List<BalanceEntry> entries,
-            Map<UUID, Integer> ranks
-    ) {
-        public static final Snapshot EMPTY = new Snapshot(List.of(), Map.of());
+    private final Map<String, MergedEntry> mergedCache = new ConcurrentHashMap<>();
+
+    public record Snapshot(List<BalanceEntry> entries) {
+        public static final Snapshot EMPTY = new Snapshot(List.of());
+    }
+
+    private record MergedEntry(List<BalanceEntry> entries, long expiresAtMillis) {
+        boolean isFresh(long now) {
+            return now < expiresAtMillis;
+        }
     }
 
     public LeaderboardCache(CurrencyRegistry registry,
@@ -64,7 +69,38 @@ public final class LeaderboardCache {
         if (limit <= 0) {
             return List.of();
         }
+        List<BalanceEntry> merged = mergedView(currencyId);
+        if (limit >= merged.size()) {
+            return merged;
+        }
+        return merged.subList(0, limit);
+    }
 
+    public int rank(UUID playerId, String currencyId) {
+        List<BalanceEntry> merged = mergedView(currencyId);
+        String uuid = playerId.toString();
+        for (int i = 0; i < merged.size(); i++) {
+            if (merged.get(i).uuid().equals(uuid)) {
+                return i + 1;
+            }
+        }
+        return 0;
+    }
+
+    private List<BalanceEntry> mergedView(String currencyId) {
+        long now = System.currentTimeMillis();
+        MergedEntry cached = mergedCache.get(currencyId);
+
+        if (cached != null && cached.isFresh(now)) {
+            return cached.entries();
+        }
+
+        List<BalanceEntry> computed = computeMerged(currencyId);
+        mergedCache.put(currencyId, new MergedEntry(computed, now + MERGED_TTL_MILLIS));
+        return computed;
+    }
+
+    private List<BalanceEntry> computeMerged(String currencyId) {
         AtomicReference<Snapshot> ref = snapshots.get(currencyId);
         List<BalanceEntry> dbSnapshot = ref != null ? ref.get().entries() : List.of();
 
@@ -81,7 +117,11 @@ public final class LeaderboardCache {
             }
             String name = economy.cachedName(uuid);
             if (name == null) {
-                return;
+                BalanceEntry dbEntry = merged.get(uuid.toString());
+                if (dbEntry == null) {
+                    return;
+                }
+                name = dbEntry.name();
             }
             merged.put(uuid.toString(),
                     new BalanceEntry(uuid.toString(), name, balance));
@@ -90,36 +130,19 @@ public final class LeaderboardCache {
         return merged.values().stream()
                 .filter(e -> e.balance().signum() > 0)
                 .sorted((a, b) -> b.balance().compareTo(a.balance()))
-                .limit(limit)
                 .toList();
-    }
-
-    public int rank(UUID playerId, String currencyId) {
-        AtomicReference<Snapshot> ref = snapshots.get(currencyId);
-        if (ref == null) {
-            return 0;
-        }
-        Integer rank = ref.get().ranks().get(playerId);
-        return rank != null ? rank : 0;
     }
 
     private CompletableFuture<Void> refreshCurrency(String currencyId) {
         AtomicReference<Snapshot> ref = snapshots.get(currencyId);
+        if (ref == null) {
+            return CompletableFuture.completedFuture(null);
+        }
 
         return storageManager.submit(s -> s.topBalances(currencyId, TOP_SIZE))
                 .thenAccept(entries -> {
-                    List<BalanceEntry> immutable = List.copyOf(entries);
-                    Map<UUID, Integer> ranks = new HashMap<>();
-                    int position = 1;
-                    for (BalanceEntry entry : immutable) {
-                        try {
-                            ranks.put(UUID.fromString(entry.uuid()), position);
-                        } catch (IllegalArgumentException ignored) {
-                            // Skip malformed UUIDs; they shouldn't exist.
-                        }
-                        position++;
-                    }
-                    ref.set(new Snapshot(immutable, Map.copyOf(ranks)));
+                    ref.set(new Snapshot(List.copyOf(entries)));
+                    mergedCache.remove(currencyId);
                 })
                 .exceptionally(ex -> {
                     logger.warning("Failed to refresh leaderboard for '"
